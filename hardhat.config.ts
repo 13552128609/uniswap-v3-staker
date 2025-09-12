@@ -7,6 +7,9 @@ import { HardhatUserConfig } from 'hardhat/config'
 import { SolcUserConfig } from 'hardhat/types'
 import 'solidity-coverage'
 
+const { UNIWAP_PRIVATE_KEY } = process.env;
+const accounts = UNIWAP_PRIVATE_KEY ? [UNIWAP_PRIVATE_KEY] : [];
+
 const DEFAULT_COMPILER_SETTINGS: SolcUserConfig = {
   version: '0.7.6',
   settings: {
@@ -72,6 +75,11 @@ const config: HardhatUserConfig = {
     },
     polygon: {
       url: `https://polygon-mainnet.infura.io/v3/${process.env.INFURA_API_KEY}`,
+    },
+    wanMainnet: {
+      chainId: 888,
+      url: "https://gwan-ssl.wandevs.org:56891",
+      accounts:accounts,
     },
   },
   solidity: {

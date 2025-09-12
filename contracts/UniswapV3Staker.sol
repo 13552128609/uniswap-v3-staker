@@ -14,9 +14,11 @@ import '@uniswap/v3-core/contracts/interfaces/IERC20Minimal.sol';
 
 import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol';
 import '@uniswap/v3-periphery/contracts/base/Multicall.sol';
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 
 /// @title Uniswap V3 canonical staking interface
-contract UniswapV3Staker is IUniswapV3Staker, Multicall {
+contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
     /// @notice Represents a staking incentive
     struct Incentive {
         uint256 totalRewardUnclaimed;
@@ -71,6 +73,21 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall {
         if (liquidity == type(uint96).max) {
             liquidity = stake.liquidityIfOverflow;
         }
+    }
+
+    /// @notice Collects up to a maximum amount of fees owed to a specific position to the recipient
+    /// @param params tokenId The ID of the NFT for which tokens are being collected,
+    /// recipient The account that should receive the tokens,
+    /// @dev Warning!!! Please make sure to use multicall to call unwrapWETH9 or sweepToken when set recipient address(0), or you will lose your funds.
+    /// amount0Max The maximum amount of token0 to collect,
+    /// amount1Max The maximum amount of token1 to collect
+    /// @return amount0 The amount of fees collected in token0
+    /// @return amount1 The amount of fees collected in token1
+    function collect(INonfungiblePositionManager.CollectParams memory params) external nonReentrant returns (uint256 amount0, uint256 amount1) {
+        address owner = deposits[params.tokenId].owner;
+        require(owner == msg.sender, 'UniswapV3Staker::collect: can only be called by deposit owner');
+        if (params.recipient == address(0)) params.recipient = owner;
+        (amount0, amount1) = nonfungiblePositionManager.collect(params);
     }
 
     /// @dev rewards[rewardToken][owner] => uint256
