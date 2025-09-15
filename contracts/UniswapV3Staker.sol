@@ -293,6 +293,65 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
         emit RewardClaimed(to, reward);
     }
 
+    function updateReward(
+        IncentiveKey memory key,
+        uint256 tokenId
+    )
+    internal{
+        Deposit memory deposit = deposits[tokenId];
+        bytes32 incentiveId = IncentiveId.compute(key);
+        (uint160 secondsPerLiquidityInsideInitialX128, uint128 liquidity) = stakes(tokenId, incentiveId);
+        require(liquidity != 0, 'UniswapV3Staker::claimRewardByIncentiveKey: stake does not exist');
+
+        Incentive storage incentive = incentives[incentiveId];
+        (, uint160 secondsPerLiquidityInsideX128, ) =
+                                key.pool.snapshotCumulativesInside(deposit.tickLower, deposit.tickUpper);
+
+        (uint256 reward, uint160 secondsInsideX128) =
+                            RewardMath.computeRewardAmount(
+                                incentive.totalRewardUnclaimed,
+                                incentive.totalSecondsClaimedX128,
+                                key.startTime,
+                                key.endTime,
+                                liquidity,
+                                secondsPerLiquidityInsideInitialX128,
+                                secondsPerLiquidityInsideX128,
+                                block.timestamp
+                            );
+
+        // if this overflows, e.g. after 2^32-1 full liquidity seconds have been claimed,
+        // reward rate will fall drastically so it's safe
+        incentive.totalSecondsClaimedX128 += secondsInsideX128;
+        // reward is never greater than total reward unclaimed
+        incentive.totalRewardUnclaimed -= reward;
+        // this only overflows if a token has a total supply greater than type(uint256).max
+        rewards[key.rewardToken][deposit.owner] += reward;
+    }
+
+    /// @inheritdoc IUniswapV3Staker
+    function claimRewardByIncentiveKey(
+        IncentiveKey memory key,
+        uint256 tokenId,
+        address to,
+        uint256 amountRequested
+    )
+        external
+        override
+        returns (uint256 reward) {
+
+        updateReward(key,tokenId);
+
+        reward = rewards[key.rewardToken][msg.sender];
+        if (amountRequested != 0 && amountRequested < reward) {
+            reward = amountRequested;
+        }
+
+        rewards[key.rewardToken][msg.sender] -= reward;
+        TransferHelperExtended.safeTransfer(address(key.rewardToken), to, reward);
+
+        emit RewardByIncentiveIdClaimed(to, key.pool, address(key.rewardToken), reward);
+    }
+
     /// @inheritdoc IUniswapV3Staker
     function getRewardInfo(IncentiveKey memory key, uint256 tokenId)
         external
