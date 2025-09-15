@@ -206,6 +206,7 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
         address owner = deposits[tokenId].owner;
         require(owner == msg.sender, 'UniswapV3Staker::transferDeposit: can only be called by deposit owner');
         deposits[tokenId].owner = to;
+        depsitsUintToAddress.set(tokenId,to);
         emit DepositTransferred(tokenId, owner, to);
     }
 
@@ -390,6 +391,32 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
             secondsPerLiquidityInsideX128,
             block.timestamp
         );
+    }
+
+    function getTokenIdsByAddress(address from)
+    external
+    view
+    returns (uint256[] memory tokenIds)
+    {
+        uint256 length = depsitsUintToAddress.length();
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < length; i++) {
+            (, address addr) = depsitsUintToAddress.at(i);
+            if (addr == from) {
+                count++;
+            }
+        }
+
+        tokenIds = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < length; i++) {
+            (uint256 tokenId, address addr) = depsitsUintToAddress.at(i);
+            if (addr == from) {
+                tokenIds[index] = tokenId;
+                index++;
+            }
+        }
     }
 
     /// @dev Stakes a deposited token without doing an ownership check
