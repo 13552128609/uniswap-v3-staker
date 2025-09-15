@@ -15,10 +15,14 @@ import '@uniswap/v3-core/contracts/interfaces/IERC20Minimal.sol';
 import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol';
 import '@uniswap/v3-periphery/contracts/base/Multicall.sol';
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/EnumerableMap.sol";
 
 
 /// @title Uniswap V3 canonical staking interface
 contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
+
+    using EnumerableMap for EnumerableMap.UintToAddressMap;
+
     /// @notice Represents a staking incentive
     struct Incentive {
         uint256 totalRewardUnclaimed;
@@ -56,6 +60,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
     /// @dev deposits[tokenId] => Deposit
     mapping(uint256 => Deposit) public override deposits;
+
+    EnumerableMap.UintToAddressMap private depsitsUintToAddress;
 
     /// @dev stakes[tokenId][incentiveHash] => Stake
     mapping(uint256 => mapping(bytes32 => Stake)) private _stakes;
@@ -174,6 +180,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
             'UniswapV3Staker::onERC721Received: not a univ3 nft'
         );
 
+        depsitsUintToAddress.set(tokenId,from);
+
         (, , , , , int24 tickLower, int24 tickUpper, , , , , ) = nonfungiblePositionManager.positions(tokenId);
 
         deposits[tokenId] = Deposit({owner: from, numberOfStakes: 0, tickLower: tickLower, tickUpper: tickUpper});
@@ -214,6 +222,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
         delete deposits[tokenId];
         emit DepositTransferred(tokenId, deposit.owner, address(0));
+
+        depsitsUintToAddress.remove(tokenId);
 
         nonfungiblePositionManager.safeTransferFrom(address(this), to, tokenId, data);
     }
