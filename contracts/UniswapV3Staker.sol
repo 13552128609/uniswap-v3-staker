@@ -432,6 +432,33 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
         }
     }
 
+    function getIncentiveKeysByTokenId(uint256 tokenId)
+    external
+    view
+    returns (IncentiveKey[] memory keys)
+    {
+        uint256 length = incentiveIds.length();
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < length; i++) {
+            bytes32 incentiveId = incentiveIds.at(i);
+            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
+                count++;
+            }
+        }
+
+        keys = new IncentiveKey[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < length; i++) {
+            bytes32 incentiveId = incentiveIds.at(i);
+            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
+                keys[index] = incentiveKeys[incentiveId];
+                index++;
+            }
+        }
+    }
+
+
     /// @dev Stakes a deposited token without doing an ownership check
     function _stakeToken(IncentiveKey memory key, uint256 tokenId) private {
         require(block.timestamp >= key.startTime, 'UniswapV3Staker::stakeToken: incentive not started');
