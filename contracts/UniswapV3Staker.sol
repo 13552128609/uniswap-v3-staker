@@ -16,12 +16,14 @@ import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.s
 import '@uniswap/v3-periphery/contracts/base/Multicall.sol';
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/EnumerableMap.sol";
+import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 
 
 /// @title Uniswap V3 canonical staking interface
 contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
     using EnumerableMap for EnumerableMap.UintToAddressMap;
+    using EnumerableSet for EnumerableSet.Bytes32Set;
 
     /// @notice Represents a staking incentive
     struct Incentive {
@@ -64,6 +66,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
     EnumerableMap.UintToAddressMap private depsitsUintToAddress;
 
     mapping(bytes32 => IncentiveKey) public incentiveKeys;
+
+    EnumerableSet.Bytes32Set    private  incentiveIds;
 
     /// @dev stakes[tokenId][incentiveHash] => Stake
     mapping(uint256 => mapping(bytes32 => Stake)) private _stakes;
@@ -141,6 +145,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
         incentiveKeys[incentiveId] = key;
 
+        incentiveIds.add(incentiveId);
+
         TransferHelperExtended.safeTransferFrom(address(key.rewardToken), msg.sender, address(this), reward);
 
         emit IncentiveCreated(key.rewardToken, key.pool, key.startTime, key.endTime, key.refundee, reward);
@@ -168,6 +174,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
         // note we never clear totalSecondsClaimedX128
 
         delete incentiveKeys[incentiveId];
+        incentiveIds.remove(incentiveId);
+
         emit IncentiveEnded(incentiveId, refund);
     }
 
