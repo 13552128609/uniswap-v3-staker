@@ -63,6 +63,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
     EnumerableMap.UintToAddressMap private depsitsUintToAddress;
 
+    mapping(bytes32 => IncentiveKey) public incentiveKeys;
+
     /// @dev stakes[tokenId][incentiveHash] => Stake
     mapping(uint256 => mapping(bytes32 => Stake)) private _stakes;
 
@@ -137,6 +139,8 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
         incentives[incentiveId].totalRewardUnclaimed += reward;
 
+        incentiveKeys[incentiveId] = key;
+
         TransferHelperExtended.safeTransferFrom(address(key.rewardToken), msg.sender, address(this), reward);
 
         emit IncentiveCreated(key.rewardToken, key.pool, key.startTime, key.endTime, key.refundee, reward);
@@ -163,6 +167,7 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
         // note we never clear totalSecondsClaimedX128
 
+        delete incentiveKeys[incentiveId];
         emit IncentiveEnded(incentiveId, refund);
     }
 
