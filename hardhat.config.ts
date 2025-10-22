@@ -81,6 +81,11 @@ const config: HardhatUserConfig = {
       url: "https://gwan-ssl.wandevs.org:56891",
       accounts:accounts,
     },
+    wanTestnet: {
+      chainId: 999,
+      url: "https://gwan-ssl.wandevs.org:46891",
+      accounts:accounts,
+   },
   },
   solidity: {
     compilers: [DEFAULT_COMPILER_SETTINGS],
