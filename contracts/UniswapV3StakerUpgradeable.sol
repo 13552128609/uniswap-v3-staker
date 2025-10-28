@@ -426,6 +426,15 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         }
     }
 
+    function getIncentiveIdByIncentiveKey(IncentiveKey memory key)
+    external
+    pure
+    view
+    returns (bytes32  incentiveId)
+    {
+        return IncentiveId.compute(key);
+    }
+
     function getIncentiveKeysByTokenId(uint256 tokenId)
     external
     view

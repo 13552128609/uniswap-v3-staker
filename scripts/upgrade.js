@@ -6,8 +6,8 @@ async function main() {
     const owner = deployer;
 
     // replace with your deployed addresses
-    const proxyAddress = "0x31C6EA7Cf4b47CF971388C01A45c56083cB39FF7";
-    const proxyAdminAddress = "0x8B23f265cA55870D78D5990Bc16Fc4bC2693AAd1";
+    const proxyAddress = "0xfBa7565606Fd05D0E97bffAF6b4Dd5D1f07971C0";
+    const proxyAdminAddress = "0x987ab81266d5B5eEd6A7a76f9FDe2bb6D12d06F2";
 
     console.log("Using deployer:", deployer.address, "owner:", owner.address);
     console.log("Proxy:", proxyAddress);
@@ -46,3 +46,4 @@ main()
         console.error(err);
         process.exit(1);
     });
+//npx hardhat run ./scripts/upgrade.js --network wanMainnet
