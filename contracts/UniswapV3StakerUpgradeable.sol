@@ -84,7 +84,6 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     // Reserve storage gap for future variable additions (to preserve storage layout for upgrades)
     uint256[50] private __stakerGap;
 
-
     /// @inheritdoc IUniswapV3Staker
     function stakes(uint256 tokenId, bytes32 incentiveId)
     public
@@ -301,11 +300,71 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         emit TokenUnstaked(tokenId, incentiveId);
     }
 
+    function getTokenIdsByAddress(address from)
+    public
+    view
+    returns (uint256[] memory tokenIds)
+    {
+        uint256 length = depsitsUintToAddress.length();
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < length; i++) {
+            (, address addr) = depsitsUintToAddress.at(i);
+            if (addr == from) {
+                count++;
+            }
+        }
+
+        tokenIds = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < length; i++) {
+            (uint256 tokenId, address addr) = depsitsUintToAddress.at(i);
+            if (addr == from) {
+                tokenIds[index] = tokenId;
+                index++;
+            }
+        }
+    }
+
+    function getRewardByRewardToken(address rewardToken,address owner)
+    public
+    view
+    returns (uint256 reward)
+    {
+        return rewards[IERC20Minimal(rewardToken)][owner];
+    }
+
+    function getIncentiveKeysByTokenId(uint256 tokenId)
+    public
+    view
+    returns (IncentiveKey[] memory keys)
+    {
+        uint256 length = incentiveIds.length();
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < length; i++) {
+            bytes32 incentiveId = incentiveIds.at(i);
+            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
+                count++;
+            }
+        }
+
+        keys = new IncentiveKey[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < length; i++) {
+            bytes32 incentiveId = incentiveIds.at(i);
+            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
+                keys[index] = incentiveKeys[incentiveId];
+                index++;
+            }
+        }
+    }
+
     function claimReward(
         IERC20Minimal rewardToken,
         address to,
         uint256 amountRequested
-    ) external override returns (uint256 reward) {
+    ) public override returns (uint256 reward) {
         reward = rewards[rewardToken][msg.sender];
         if (amountRequested != 0 && amountRequested < reward) {
             reward = amountRequested;
@@ -315,6 +374,51 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         TransferHelperExtended.safeTransfer(address(rewardToken), to, reward);
 
         emit RewardClaimed(to, reward);
+    }
+
+    function getRewardTokensByAddress(address from)
+    public
+    view
+    returns (address[] memory rewardTokens)
+    {
+        uint256[] memory tokenIds = getTokenIdsByAddress(from);
+        bytes32[] memory tempIncentiveIds = new bytes32[](incentiveIds.length());
+        uint256 tempCount = 0;
+
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            IncentiveKey[] memory keys = getIncentiveKeysByTokenId(tokenIds[i]);
+            for (uint256 j = 0; j < keys.length; j++) {
+                bytes32 incentiveId = IncentiveId.compute(keys[j]);
+                // 手动检查是否重复
+                bool exists = false;
+                for (uint256 k = 0; k < tempCount; k++) {
+                    if (tempIncentiveIds[k] == incentiveId) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    tempIncentiveIds[tempCount] = incentiveId;
+                    tempCount++;
+                }
+            }
+        }
+
+        rewardTokens = new address[](tempCount);
+        for (uint256 i = 0; i < tempCount; i++) {
+            IncentiveKey memory key = incentiveKeys[tempIncentiveIds[i]];
+            rewardTokens[i] = address(key.rewardToken);
+        }
+    }
+
+    function claimAllReward( address to)
+    external {
+        updateAllReward(msg.sender);
+        address[] memory rewardTokens = getRewardTokensByAddress(msg.sender);
+        for(uint256 i = 0; i< rewardTokens.length; i++){
+            uint256 amountRequested = getRewardByRewardToken(rewardTokens[i],msg.sender);
+            claimReward(IERC20Minimal(rewardTokens[i]),to,amountRequested);
+        }
     }
 
     function updateReward(
@@ -348,6 +452,18 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         rewards[key.rewardToken][deposit.owner] += reward;
     }
 
+    function updateAllReward(address from)
+    internal{
+        uint256[] memory tokenIds = getTokenIdsByAddress(from);
+        for ( uint256 i = 0; i< tokenIds.length; i++ ) {
+            uint256 tokenId = tokenIds[i];
+            IncentiveKey[] memory keys = getIncentiveKeysByTokenId(tokenId);
+            for ( uint256 j = 0; j< keys.length; j++) {
+                updateReward(keys[j],tokenId);
+            }
+        }
+    }
+
     function claimRewardByIncentiveKey(
         IncentiveKey memory key,
         uint256 tokenId,
@@ -360,7 +476,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
 
         updateReward(key,tokenId);
 
-        reward = rewards[key.rewardToken][msg.sender];
+        reward = rewards[key.rewardToken][msg.sender];//todo should be the owner of the tokenId, not the sender.
         if (amountRequested != 0 && amountRequested < reward) {
             reward = amountRequested;
         }
@@ -400,66 +516,18 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         );
     }
 
-    function getTokenIdsByAddress(address from)
-    external
-    view
-    returns (uint256[] memory tokenIds)
-    {
-        uint256 length = depsitsUintToAddress.length();
-        uint256 count = 0;
 
-        for (uint256 i = 0; i < length; i++) {
-            (, address addr) = depsitsUintToAddress.at(i);
-            if (addr == from) {
-                count++;
-            }
-        }
 
-        tokenIds = new uint256[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < length; i++) {
-            (uint256 tokenId, address addr) = depsitsUintToAddress.at(i);
-            if (addr == from) {
-                tokenIds[index] = tokenId;
-                index++;
-            }
-        }
-    }
 
     function getIncentiveIdByIncentiveKey(IncentiveKey memory key)
     external
     pure
-    view
     returns (bytes32  incentiveId)
     {
         return IncentiveId.compute(key);
     }
 
-    function getIncentiveKeysByTokenId(uint256 tokenId)
-    external
-    view
-    returns (IncentiveKey[] memory keys)
-    {
-        uint256 length = incentiveIds.length();
-        uint256 count = 0;
 
-        for (uint256 i = 0; i < length; i++) {
-            bytes32 incentiveId = incentiveIds.at(i);
-            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
-                count++;
-            }
-        }
-
-        keys = new IncentiveKey[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < length; i++) {
-            bytes32 incentiveId = incentiveIds.at(i);
-            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
-                keys[index] = incentiveKeys[incentiveId];
-                index++;
-            }
-        }
-    }
 
     function _stakeToken(IncentiveKey memory key, uint256 tokenId) private {
         require(block.timestamp >= key.startTime, 'UniswapV3Staker::stakeToken: incentive not started');
