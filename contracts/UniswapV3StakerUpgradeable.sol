@@ -480,23 +480,22 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     returns (address[] memory rewardTokens)
     {
         uint256[] memory tokenIds = getTokenIdsByAddress(from);
-        bytes32[] memory tempIncentiveIds = new bytes32[](incentiveIds.length());
+        address[] memory tempRewardToken = new address[](incentiveIds.length());
         uint256 tempCount = 0;
 
         for (uint256 i = 0; i < tokenIds.length; i++) {
             IncentiveKey[] memory keys = getIncentiveKeysByTokenId(tokenIds[i]);
             for (uint256 j = 0; j < keys.length; j++) {
-                bytes32 incentiveId = IncentiveId.compute(keys[j]);
                 // check duplicated
                 bool exists = false;
                 for (uint256 k = 0; k < tempCount; k++) {
-                    if (tempIncentiveIds[k] == incentiveId) {
+                    if (tempRewardToken[k] == address(keys[j].rewardToken)) {
                         exists = true;
                         break;
                     }
                 }
                 if (!exists) {
-                    tempIncentiveIds[tempCount] = incentiveId;
+                    tempRewardToken[tempCount] = address(keys[j].rewardToken);
                     tempCount++;
                 }
             }
@@ -504,8 +503,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
 
         rewardTokens = new address[](tempCount);
         for (uint256 i = 0; i < tempCount; i++) {
-            IncentiveKey memory key = incentiveKeys[tempIncentiveIds[i]];
-            rewardTokens[i] = address(key.rewardToken);
+            rewardTokens[i] = tempRewardToken[i];
         }
     }
 
@@ -576,14 +574,18 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     override
     returns (uint256 reward) {
 
+        address owner = deposits[tokenId].owner;
+        require(owner == msg.sender, "UniswapV3Staker::claimRewardByIncentiveKey: only deposit owner can claim");
+
         updateReward(key, tokenId);
 
-        reward = rewards[key.rewardToken][msg.sender];//todo should be the owner of the tokenId, not the sender.
+        reward = rewards[key.rewardToken][owner];
+
         if (amountRequested != 0 && amountRequested < reward) {
             reward = amountRequested;
         }
 
-        rewards[key.rewardToken][msg.sender] -= reward;
+        rewards[key.rewardToken][owner] -= reward;
         TransferHelperExtended.safeTransfer(address(key.rewardToken), to, reward);
 
         emit RewardByIncentiveIdClaimed(to, key.pool, address(key.rewardToken), reward);
