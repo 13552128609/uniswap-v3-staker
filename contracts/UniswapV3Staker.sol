@@ -14,17 +14,9 @@ import '@uniswap/v3-core/contracts/interfaces/IERC20Minimal.sol';
 
 import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol';
 import '@uniswap/v3-periphery/contracts/base/Multicall.sol';
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/EnumerableMap.sol";
-import "@openzeppelin/contracts/utils/EnumerableSet.sol";
-
 
 /// @title Uniswap V3 canonical staking interface
-contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
-
-    using EnumerableMap for EnumerableMap.UintToAddressMap;
-    using EnumerableSet for EnumerableSet.Bytes32Set;
-
+contract UniswapV3Staker is IUniswapV3Staker, Multicall {
     /// @notice Represents a staking incentive
     struct Incentive {
         uint256 totalRewardUnclaimed;
@@ -63,12 +55,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
     /// @dev deposits[tokenId] => Deposit
     mapping(uint256 => Deposit) public override deposits;
 
-    EnumerableMap.UintToAddressMap private depsitsUintToAddress;
-
-    mapping(bytes32 => IncentiveKey) public incentiveKeys;
-
-    EnumerableSet.Bytes32Set    private  incentiveIds;
-
     /// @dev stakes[tokenId][incentiveHash] => Stake
     mapping(uint256 => mapping(bytes32 => Stake)) private _stakes;
 
@@ -85,21 +71,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
         if (liquidity == type(uint96).max) {
             liquidity = stake.liquidityIfOverflow;
         }
-    }
-
-    /// @notice Collects up to a maximum amount of fees owed to a specific position to the recipient
-    /// @param params tokenId The ID of the NFT for which tokens are being collected,
-    /// recipient The account that should receive the tokens,
-    /// @dev Warning!!! Please make sure to use multicall to call unwrapWETH9 or sweepToken when set recipient address(0), or you will lose your funds.
-    /// amount0Max The maximum amount of token0 to collect,
-    /// amount1Max The maximum amount of token1 to collect
-    /// @return amount0 The amount of fees collected in token0
-    /// @return amount1 The amount of fees collected in token1
-    function collect(INonfungiblePositionManager.CollectParams memory params) external nonReentrant returns (uint256 amount0, uint256 amount1) {
-        address owner = deposits[params.tokenId].owner;
-        require(owner == msg.sender, 'UniswapV3Staker::collect: can only be called by deposit owner');
-        if (params.recipient == address(0)) params.recipient = owner;
-        (amount0, amount1) = nonfungiblePositionManager.collect(params);
     }
 
     /// @dev rewards[rewardToken][owner] => uint256
@@ -143,10 +114,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
         incentives[incentiveId].totalRewardUnclaimed += reward;
 
-        incentiveKeys[incentiveId] = key;
-
-        incentiveIds.add(incentiveId);
-
         TransferHelperExtended.safeTransferFrom(address(key.rewardToken), msg.sender, address(this), reward);
 
         emit IncentiveCreated(key.rewardToken, key.pool, key.startTime, key.endTime, key.refundee, reward);
@@ -173,9 +140,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
         // note we never clear totalSecondsClaimedX128
 
-        delete incentiveKeys[incentiveId];
-        incentiveIds.remove(incentiveId);
-
         emit IncentiveEnded(incentiveId, refund);
     }
 
@@ -192,8 +156,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
             msg.sender == address(nonfungiblePositionManager),
             'UniswapV3Staker::onERC721Received: not a univ3 nft'
         );
-
-        depsitsUintToAddress.set(tokenId,from);
 
         (, , , , , int24 tickLower, int24 tickUpper, , , , , ) = nonfungiblePositionManager.positions(tokenId);
 
@@ -219,7 +181,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
         address owner = deposits[tokenId].owner;
         require(owner == msg.sender, 'UniswapV3Staker::transferDeposit: can only be called by deposit owner');
         deposits[tokenId].owner = to;
-        depsitsUintToAddress.set(tokenId,to);
         emit DepositTransferred(tokenId, owner, to);
     }
 
@@ -236,8 +197,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
 
         delete deposits[tokenId];
         emit DepositTransferred(tokenId, deposit.owner, address(0));
-
-        depsitsUintToAddress.remove(tokenId);
 
         nonfungiblePositionManager.safeTransferFrom(address(this), to, tokenId, data);
     }
@@ -317,65 +276,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
         emit RewardClaimed(to, reward);
     }
 
-    function updateReward(
-        IncentiveKey memory key,
-        uint256 tokenId
-    )
-    internal{
-        Deposit memory deposit = deposits[tokenId];
-        bytes32 incentiveId = IncentiveId.compute(key);
-        (uint160 secondsPerLiquidityInsideInitialX128, uint128 liquidity) = stakes(tokenId, incentiveId);
-        require(liquidity != 0, 'UniswapV3Staker::claimRewardByIncentiveKey: stake does not exist');
-
-        Incentive storage incentive = incentives[incentiveId];
-        (, uint160 secondsPerLiquidityInsideX128, ) =
-                                key.pool.snapshotCumulativesInside(deposit.tickLower, deposit.tickUpper);
-
-        (uint256 reward, uint160 secondsInsideX128) =
-                            RewardMath.computeRewardAmount(
-                                incentive.totalRewardUnclaimed,
-                                incentive.totalSecondsClaimedX128,
-                                key.startTime,
-                                key.endTime,
-                                liquidity,
-                                secondsPerLiquidityInsideInitialX128,
-                                secondsPerLiquidityInsideX128,
-                                block.timestamp
-                            );
-
-        // if this overflows, e.g. after 2^32-1 full liquidity seconds have been claimed,
-        // reward rate will fall drastically so it's safe
-        incentive.totalSecondsClaimedX128 += secondsInsideX128;
-        // reward is never greater than total reward unclaimed
-        incentive.totalRewardUnclaimed -= reward;
-        // this only overflows if a token has a total supply greater than type(uint256).max
-        rewards[key.rewardToken][deposit.owner] += reward;
-    }
-
-    /// @inheritdoc IUniswapV3Staker
-    function claimRewardByIncentiveKey(
-        IncentiveKey memory key,
-        uint256 tokenId,
-        address to,
-        uint256 amountRequested
-    )
-        external
-        override
-        returns (uint256 reward) {
-
-        updateReward(key,tokenId);
-
-        reward = rewards[key.rewardToken][msg.sender];
-        if (amountRequested != 0 && amountRequested < reward) {
-            reward = amountRequested;
-        }
-
-        rewards[key.rewardToken][msg.sender] -= reward;
-        TransferHelperExtended.safeTransfer(address(key.rewardToken), to, reward);
-
-        emit RewardByIncentiveIdClaimed(to, key.pool, address(key.rewardToken), reward);
-    }
-
     /// @inheritdoc IUniswapV3Staker
     function getRewardInfo(IncentiveKey memory key, uint256 tokenId)
         external
@@ -405,59 +305,6 @@ contract UniswapV3Staker is IUniswapV3Staker, Multicall, ReentrancyGuard {
             block.timestamp
         );
     }
-
-    function getTokenIdsByAddress(address from)
-    external
-    view
-    returns (uint256[] memory tokenIds)
-    {
-        uint256 length = depsitsUintToAddress.length();
-        uint256 count = 0;
-
-        for (uint256 i = 0; i < length; i++) {
-            (, address addr) = depsitsUintToAddress.at(i);
-            if (addr == from) {
-                count++;
-            }
-        }
-
-        tokenIds = new uint256[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < length; i++) {
-            (uint256 tokenId, address addr) = depsitsUintToAddress.at(i);
-            if (addr == from) {
-                tokenIds[index] = tokenId;
-                index++;
-            }
-        }
-    }
-
-    function getIncentiveKeysByTokenId(uint256 tokenId)
-    external
-    view
-    returns (IncentiveKey[] memory keys)
-    {
-        uint256 length = incentiveIds.length();
-        uint256 count = 0;
-
-        for (uint256 i = 0; i < length; i++) {
-            bytes32 incentiveId = incentiveIds.at(i);
-            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
-                count++;
-            }
-        }
-
-        keys = new IncentiveKey[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < length; i++) {
-            bytes32 incentiveId = incentiveIds.at(i);
-            if(_stakes[tokenId][incentiveId].liquidityNoOverflow != 0){
-                keys[index] = incentiveKeys[incentiveId];
-                index++;
-            }
-        }
-    }
-
 
     /// @dev Stakes a deposited token without doing an ownership check
     function _stakeToken(IncentiveKey memory key, uint256 tokenId) private {
