@@ -7,10 +7,15 @@ import './libraries/IncentiveId.sol';
 import './libraries/RewardMath.sol';
 import './libraries/NFTPositionInfo.sol';
 import './libraries/TransferHelperExtended.sol';
+import './libraries/Tick.sol';
 
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol';
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol';
 import '@uniswap/v3-core/contracts/interfaces/IERC20Minimal.sol';
+
+
+import '@uniswap/v3-core/contracts/libraries/FixedPoint128.sol';
+import '@uniswap/v3-periphery/contracts/libraries/PositionKey.sol';
 
 import '@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol';
 import '@uniswap/v3-periphery/contracts/base/Multicall.sol';
@@ -94,7 +99,8 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     mapping(IERC20Minimal => mapping(address => uint256)) public override rewards;
 
     // Reserve storage gap for future variable additions (to preserve storage layout for upgrades)
-    uint256[50] private __stakerGap;
+    // since there is no requirement for future contract inherit this contract ,so comment __stakeGap
+    //uint256[50] private __stakerGap;
 
     /// @inheritdoc IUniswapV3Staker
     function stakes(uint256 tokenId, bytes32 incentiveId)
@@ -656,5 +662,79 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     returns (bytes32 incentiveId)
     {
         return IncentiveId.compute(key);
+    }
+
+    struct GrowthInsideParameters {
+        IUniswapV3Pool pool; int24 tickLower;int24 tickUpper; int24 tickCurrent;uint256 feeGrowthGlobal0X128;uint256 feeGrowthGlobal1X128;
+    }
+    function getLatestFeeGrowthInsideByTick(GrowthInsideParameters memory pars)
+    view
+    internal
+    returns(uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128){
+
+        (,,uint256 lowerFeeGrowthOutside0X128, uint256 lowerFeeGrowthOutside1X128,,,,) = pars.pool.ticks(pars.tickLower);
+        (,,uint256 upperFeeGrowthOutside0X128, uint256 upperFeeGrowthOutside1X128,,,,) = pars.pool.ticks(pars.tickUpper);
+
+        (feeGrowthInside0LastX128, feeGrowthInside1LastX128) = Tick.getFeeGrowthInside(
+            lowerFeeGrowthOutside0X128,
+            lowerFeeGrowthOutside1X128,
+            upperFeeGrowthOutside0X128,
+            upperFeeGrowthOutside1X128,
+            pars.tickLower,
+            pars.tickUpper,
+            pars.tickCurrent,
+            pars.feeGrowthGlobal0X128,
+            pars.feeGrowthGlobal1X128
+        );
+    }
+
+    /// @dev get swap fee by token id
+    function getSwapFeeByTokenId(IUniswapV3Pool pool, uint256 tokenId)
+    external
+    view
+    returns (uint128 swapFee0, uint128 swapFee1)
+    {
+        (,,,,,
+            int24 tickLower,
+            int24 tickUpper,
+            uint128 liquidity,
+            uint256 feeGrowthInside0LastX128Old,
+            uint256 feeGrowthInside1LastX128Old,
+            uint128 tokensOwed0,
+            uint128 tokensOwed1) = nonfungiblePositionManager.positions(tokenId);
+        if (liquidity > 0) {
+
+            (,int24 tickCurrent,,,,,) = pool.slot0();
+            GrowthInsideParameters memory para = GrowthInsideParameters({
+                pool: pool,
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                tickCurrent: tickCurrent,
+                feeGrowthGlobal0X128: pool.feeGrowthGlobal0X128(),
+                feeGrowthGlobal1X128: pool.feeGrowthGlobal1X128()
+            });
+
+            (uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128) = getLatestFeeGrowthInsideByTick(para);
+
+
+            tokensOwed0 += uint128(
+                FullMath.mulDiv(
+                    feeGrowthInside0LastX128 - feeGrowthInside0LastX128Old,
+                    liquidity,
+                    FixedPoint128.Q128
+                )
+            );
+            tokensOwed1 += uint128(
+                FullMath.mulDiv(
+                    feeGrowthInside1LastX128 - feeGrowthInside1LastX128Old,
+                    liquidity,
+                    FixedPoint128.Q128
+                )
+            );
+        }
+
+        swapFee0 = tokensOwed0;
+        swapFee1 = tokensOwed1;
+
     }
 }
