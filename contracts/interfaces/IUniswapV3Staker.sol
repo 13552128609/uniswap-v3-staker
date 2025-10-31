@@ -130,19 +130,6 @@ interface IUniswapV3Staker is IERC721Receiver, IMulticall {
         uint256 amountRequested
     ) external returns (uint256 reward);
 
-    /// @notice Transfers `amountRequested` of accrued `rewardToken` rewards from the contract to the recipient `to` by incentive key
-    /// @param key The key of the incentive
-    /// @param tokenId The ID of the token
-    /// @param to The address where claimed rewards will be sent to
-    /// @param amountRequested The amount of reward tokens to claim. Claims entire reward amount if set to 0.
-    /// @return reward The amount of reward tokens claimed
-    function claimRewardByIncentiveKey(
-        IncentiveKey memory key,
-        uint256 tokenId,
-        address to,
-        uint256 amountRequested
-    ) external returns (uint256 reward);
-
     /// @notice Calculates the reward amount that will be received for the given stake
     /// @param key The key of the incentive
     /// @param tokenId The ID of the token
@@ -193,11 +180,4 @@ interface IUniswapV3Staker is IERC721Receiver, IMulticall {
     /// @param to The address where claimed rewards were sent to
     /// @param reward The amount of reward tokens claimed
     event RewardClaimed(address indexed to, uint256 reward);
-
-    /// @notice Event emitted when a reward token has been claimed
-    /// @param to The address where claimed rewards were sent to
-    /// @param pool The Uniswap V3 pool
-    /// @param rewardToken The rewardToken
-    /// @param reward The amount of reward tokens claimed
-    event RewardByIncentiveIdClaimed(address indexed to,IUniswapV3Pool indexed pool,address indexed rewardToken, uint256 reward);
 }
