@@ -420,6 +420,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         (amount0, amount1) = nonfungiblePositionManager.collect(params);
     }
 
+    /// @dev get tokenIds (include staked and unstaked) by address
     function getTokenIdsByAddress(address from)
     public
     view
@@ -446,6 +447,49 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         }
     }
 
+    /// @dev get staked tokenIds owned by from address
+    function getStakedTokenIdsByAddress(address from)
+    public
+    view
+    returns (uint256[] memory tokenIds)
+    {
+        uint256[] memory tokenIdsAll = getTokenIdsByAddress(from);
+        uint256 len = tokenIdsAll.length;
+        uint256 count = 0;
+        uint256[] memory tokenIdsTemp = new uint256[](len);
+        for (uint256 i = 0; i < len; i++) {
+            if (isTokenStaked(tokenIdsAll[i])) {
+                tokenIdsTemp[count] = tokenIdsAll[i];
+                count++;
+            }
+        }
+        tokenIds = new uint256[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            tokenIds[i] = tokenIdsTemp[i];
+        }
+    }
+
+    /// @dev check token staked or not
+    function isTokenStaked(uint256 tokenId)
+    public
+    view
+    returns (bool staked)
+    {
+        staked = false;
+        uint256 len = incentiveIds.length();
+        for(uint256 i=0 ; i<len; i++){
+            if(_stakes[tokenId][incentiveIds.at(i)].liquidityNoOverflow != 0){
+                staked = true;
+                break;
+            }
+        }
+    }
+
+    /// @dev get reward by rewardToken
+    /// @param rewardToken rewardToken of incentive
+    /// @param owner users address
+    /// @param reward the reward of rewardToken owned by owner address.
     function getRewardByRewardToken(address rewardToken, address owner)
     public
     view
@@ -454,6 +498,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         return rewards[IERC20Minimal(rewardToken)][owner];
     }
 
+    /// @dev get incentiveKeys of specific tokenId
     function getIncentiveKeysByTokenId(uint256 tokenId)
     public
     view
@@ -486,7 +531,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     view
     returns (address[] memory rewardTokens)
     {
-        uint256[] memory tokenIds = getTokenIdsByAddress(from);
+        uint256[] memory tokenIds = getStakedTokenIdsByAddress(from);
         address[] memory tempRewardToken = new address[](incentiveIds.length());
         uint256 tempCount = 0;
 
@@ -514,6 +559,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         }
     }
 
+    /// @notice cost much gas, need to increase gas limit when invoke this function.
     /// @dev claim All Reward of msg.sender, includes all token of all incentives staked by msg.sender.
     function claimAllReward(address to)
     external {
@@ -560,7 +606,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     /// @dev update all reward owned by from address.
     function updateAllReward(address from)
     internal {
-        uint256[] memory tokenIds = getTokenIdsByAddress(from);
+        uint256[] memory tokenIds = getStakedTokenIdsByAddress(from);
         for (uint256 i = 0; i < tokenIds.length; i++) {
             uint256 tokenId = tokenIds[i];
             IncentiveKey[] memory keys = getIncentiveKeysByTokenId(tokenId);
