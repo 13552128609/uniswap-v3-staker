@@ -8,6 +8,7 @@ import './libraries/RewardMath.sol';
 import './libraries/NFTPositionInfo.sol';
 import './libraries/TransferHelperExtended.sol';
 import './libraries/Tick.sol';
+import './libraries/utils.sol';
 
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol';
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol';
@@ -31,10 +32,13 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/EnumerableMap.sol";
 import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 
+
 /// @title Uniswap V3 canonical staking interface (upgradeable)
 contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multicall, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     using EnumerableMap for EnumerableMap.UintToAddressMap;
     using EnumerableSet for EnumerableSet.Bytes32Set;
+    using EnumerableSet for EnumerableSet.UintSet;
+
 
     /// @notice Event emitted when a reward token has been claimed
     /// @param to The address where claimed rewards were sent to
@@ -82,6 +86,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     mapping(uint256 => Deposit) public override deposits;
 
     /// @dev depsitsUintToAddress[tokenId] => address, used in getTokenIdsByAddress
+    /// Deprecated. leave it because of contract upgrade.replace by userTokenIds
     EnumerableMap.UintToAddressMap private depsitsUintToAddress;
 
     /// @dev incentiveKeys[incentiveId] => IncentiveKey
@@ -97,6 +102,15 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     /// @dev rewards[rewardToken][owner] => uint256
     /// @inheritdoc IUniswapV3Staker
     mapping(IERC20Minimal => mapping(address => uint256)) public override rewards;
+
+    /// @dev userTokenIds[owner] => UintSet
+    mapping(address => EnumerableSet.UintSet) private userTokenIds;
+
+    /// @dev tokenIdIncentiveIds[tokenId] => Bytes32Set(IncentiveIds)
+    mapping(uint => EnumerableSet.Bytes32Set) private tokenIdIncentiveIds;
+
+    /// @dev userRewardTokens[address] => Bytes32Set(rewardToken)
+    mapping(address => EnumerableSet.Bytes32Set) private userRewardTokens;
 
     // Reserve storage gap for future variable additions (to preserve storage layout for upgrades)
     // since there is no requirement for future contract inherit this contract ,so comment __stakeGap
@@ -220,7 +234,8 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
             'UniswapV3Staker::onERC721Received: not a univ3 nft'
         );
 
-        depsitsUintToAddress.set(tokenId,from);
+        require(!userTokenIds[from].contains(tokenId),'tokenId is already in userTokenIds');
+        userTokenIds[from].add(tokenId);
 
         (, , , , , int24 tickLower, int24 tickUpper, , , , , ) = nonfungiblePositionManager.positions(tokenId);
 
@@ -246,7 +261,15 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         address owner = deposits[tokenId].owner;
         require(owner == msg.sender, 'UniswapV3Staker::transferDeposit: can only be called by deposit owner');
         deposits[tokenId].owner = to;
-        depsitsUintToAddress.set(tokenId,to);
+
+        require(userTokenIds[owner].contains(tokenId),'tokenId is not in userTokenIds of from address');
+        require(!userTokenIds[to].contains(tokenId),'tokenId is already in userTokenIds of to address');
+        userTokenIds[owner].remove(tokenId);
+        userTokenIds[to].add(tokenId);
+
+        updateRewardTokenForRemoveTokenId(tokenId,owner);
+        updateRewardTokenForAddTokenId(tokenId,to);
+
         emit DepositTransferred(tokenId, owner, to);
     }
 
@@ -264,7 +287,8 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         delete deposits[tokenId];
         emit DepositTransferred(tokenId, deposit.owner, address(0));
 
-        depsitsUintToAddress.remove(tokenId);
+        require(userTokenIds[msg.sender].contains(tokenId),'tokenId is not in userTokenIds when withdrawToken');
+        userTokenIds[msg.sender].remove(tokenId);
 
         nonfungiblePositionManager.safeTransferFrom(address(this), to, tokenId, data);
     }
@@ -298,6 +322,11 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
 
         deposits[tokenId].numberOfStakes--;
         incentive.numberOfStakes--;
+        tokenIdIncentiveIds[tokenId].remove(incentiveId);
+
+        if( canDeleteRewardToken(address(key.rewardToken),msg.sender)){
+            userRewardTokens[msg.sender].remove(utils.addressToBytes32(address(key.rewardToken)));
+        }
 
         (, uint160 secondsPerLiquidityInsideX128, ) =
             key.pool.snapshotCumulativesInside(deposit.tickLower, deposit.tickUpper);
@@ -327,6 +356,40 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         if (liquidity >= type(uint96).max) delete stake.liquidityIfOverflow;
         emit TokenUnstaked(tokenId, incentiveId);
     }
+
+    /// @dev
+    /// 1. used for unstakeToken, unstakeToken one incentive key, may be there is another incentive key related the reward token.
+    /// before call canDeleteRewardToken in unstakeToken funtcion, tokenIdIncentiveIds has remove the incentiveKey of the tokenId
+    /// so no need to filter the original incentiveKey.
+    /// 2. used for transfer tokenId to others, so check if other tokenIds are related rewardToken or not.
+    /// before call canDeleteRewardToken in function transferDeposit, userTokenIds has deleted the tokenId
+    /// so no need to filter the tokenId in transfer
+    function canDeleteRewardToken(
+        address rewardToken,
+        address user
+    ) internal view returns (bool canDelete) {
+        canDelete = true;
+        uint256 count = 0;
+        uint256 len = userTokenIds[user].length();
+        for (uint256 i = 0; i < len; i++) {
+            uint256 tokenId = userTokenIds[user].at(i);
+            IncentiveKey[] memory keys = getIncentiveKeysByTokenId(tokenId);
+            for (uint256 j = 0; j < keys.length; j++) {
+                IncentiveKey memory key = keys[j];
+                if (address(key.rewardToken) == rewardToken) {
+                    count ++;
+                    if (count > 1) {
+                        canDelete = false;
+                        break;
+                    }
+                }
+            }
+            if (!canDelete) {
+                break;
+            }
+        }
+    }
+
 
     /// @inheritdoc IUniswapV3Staker
     function claimReward(
@@ -400,6 +463,12 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         deposits[tokenId].numberOfStakes++;
         incentives[incentiveId].numberOfStakes++;
 
+        tokenIdIncentiveIds[tokenId].add(incentiveId);
+        bytes32 rewardTokenBytes32 = utils.addressToBytes32(address(key.rewardToken));
+        if (!userRewardTokens[msg.sender].contains(rewardTokenBytes32)){
+            userRewardTokens[msg.sender].add(rewardTokenBytes32);
+        }
+
         (, uint160 secondsPerLiquidityInsideX128, ) = pool.snapshotCumulativesInside(tickLower, tickUpper);
 
         if (liquidity >= type(uint96).max) {
@@ -432,24 +501,10 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     view
     returns (uint256[] memory tokenIds)
     {
-        uint256 length = depsitsUintToAddress.length();
-        uint256 count = 0;
-
+        uint256 length = userTokenIds[from].length();
+        tokenIds = new uint256[](length);
         for (uint256 i = 0; i < length; i++) {
-            (, address addr) = depsitsUintToAddress.at(i);
-            if (addr == from) {
-                count++;
-            }
-        }
-
-        tokenIds = new uint256[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < length; i++) {
-            (uint256 tokenId, address addr) = depsitsUintToAddress.at(i);
-            if (addr == from) {
-                tokenIds[index] = tokenId;
-                index++;
-            }
+            tokenIds[i] = userTokenIds[from].at(i);
         }
     }
 
@@ -504,30 +559,72 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         return rewards[IERC20Minimal(rewardToken)][owner];
     }
 
+    /// @dev get all rewardTokens by TokenId
+    function getRewardTokensByTokenId(uint256 tokenId)
+    public
+    view
+    returns (address[] memory rewardTokens)
+    {
+        IncentiveKey[] memory keys = getIncentiveKeysByTokenId(tokenId);
+        address[] memory tempRewardToken = new address[](keys.length);
+        uint256 tempCount = 0;
+        for (uint256 j = 0; j < keys.length; j++) {
+            // check duplicated
+            bool exists = false;
+            for (uint256 k = 0; k < tempCount; k++) {
+                if (tempRewardToken[k] == address(keys[j].rewardToken)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                tempRewardToken[tempCount] = address(keys[j].rewardToken);
+                tempCount++;
+            }
+        }
+
+        rewardTokens = new address[](tempCount);
+        for (uint256 i = 0; i < tempCount; i++) {
+            rewardTokens[i] = tempRewardToken[i];
+        }
+    }
+
+    /// @dev update the rewardTokens of user, when transfer tokenId to other address.
+    function updateRewardTokenForRemoveTokenId(uint256 tokenId, address user) internal {
+        address[] memory rewardTokens =  getRewardTokensByTokenId(tokenId);
+        for( uint256 i = 0; i< rewardTokens.length; i++){
+            address rewardToken = rewardTokens[i];
+            if(canDeleteRewardToken(rewardToken,user)){
+                bytes32 rewardTokenBytes32 = utils.addressToBytes32(rewardToken);
+                userRewardTokens[user].remove(rewardTokenBytes32);
+            }
+        }
+    }
+
+    /// @dev update the rewardTokens of user, when receive tokenId from other user
+    function updateRewardTokenForAddTokenId(uint256 tokenId, address user) internal {
+        address[] memory rewardTokens =  getRewardTokensByTokenId(tokenId);
+        for( uint256 i = 0; i< rewardTokens.length; i++){
+            address rewardToken = address(rewardTokens[i]);
+            bytes32 rewardTokenBytes32 = utils.addressToBytes32(rewardToken);
+            if(!userRewardTokens[user].contains(rewardTokenBytes32)){
+                userRewardTokens[user].add(rewardTokenBytes32);
+            }
+        }
+    }
+
     /// @dev get incentiveKeys of specific tokenId
     function getIncentiveKeysByTokenId(uint256 tokenId)
     public
     view
     returns (IncentiveKey[] memory keys)
     {
-        uint256 length = incentiveIds.length();
-        uint256 count = 0;
+        uint256 length = tokenIdIncentiveIds[tokenId].length();
 
+        keys = new IncentiveKey[](length);
         for (uint256 i = 0; i < length; i++) {
-            bytes32 incentiveId = incentiveIds.at(i);
-            if (_stakes[tokenId][incentiveId].liquidityNoOverflow != 0) {
-                count++;
-            }
-        }
-
-        keys = new IncentiveKey[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < length; i++) {
-            bytes32 incentiveId = incentiveIds.at(i);
-            if (_stakes[tokenId][incentiveId].liquidityNoOverflow != 0) {
-                keys[index] = incentiveKeys[incentiveId];
-                index++;
-            }
+            bytes32 incentiveId = tokenIdIncentiveIds[tokenId].at(i);
+            keys[i] = incentiveKeys[incentiveId];
         }
     }
 
@@ -537,31 +634,11 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     view
     returns (address[] memory rewardTokens)
     {
-        uint256[] memory tokenIds = getStakedTokenIdsByAddress(from);
-        address[] memory tempRewardToken = new address[](incentiveIds.length());
-        uint256 tempCount = 0;
-
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            IncentiveKey[] memory keys = getIncentiveKeysByTokenId(tokenIds[i]);
-            for (uint256 j = 0; j < keys.length; j++) {
-                // check duplicated
-                bool exists = false;
-                for (uint256 k = 0; k < tempCount; k++) {
-                    if (tempRewardToken[k] == address(keys[j].rewardToken)) {
-                        exists = true;
-                        break;
-                    }
-                }
-                if (!exists) {
-                    tempRewardToken[tempCount] = address(keys[j].rewardToken);
-                    tempCount++;
-                }
-            }
-        }
-
-        rewardTokens = new address[](tempCount);
-        for (uint256 i = 0; i < tempCount; i++) {
-            rewardTokens[i] = tempRewardToken[i];
+        uint256 len = userRewardTokens[from].length();
+        rewardTokens = new address[](len);
+        for( uint256 i = 0; i<len; i++){
+            bytes32   rewardTokenBytes32 = userRewardTokens[from].at(i);
+            rewardTokens[i] = utils.bytesToAddress(utils.bytes32ToBytes(rewardTokenBytes32));
         }
     }
 
@@ -572,8 +649,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         updateAllReward(msg.sender);
         address[] memory rewardTokens = getRewardTokensByAddress(msg.sender);
         for (uint256 i = 0; i < rewardTokens.length; i++) {
-            uint256 amountRequested = getRewardByRewardToken(rewardTokens[i], msg.sender);
-            claimReward(IERC20Minimal(rewardTokens[i]), to, amountRequested);
+            claimReward(IERC20Minimal(rewardTokens[i]), to, 0); // claim all reward of one token.
         }
     }
     

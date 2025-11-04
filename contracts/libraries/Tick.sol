@@ -33,7 +33,7 @@ library Tick {
         int24 tickCurrent,
         uint256 feeGrowthGlobal0X128,
         uint256 feeGrowthGlobal1X128
-    ) internal view returns (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) {
+    ) internal pure returns (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) {
 
         // calculate fee growth below
         uint256 feeGrowthBelow0X128;
