@@ -777,7 +777,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
             uint256 feeGrowthInside0LastX128Old,
             uint256 feeGrowthInside1LastX128Old,
             uint128 tokensOwed0,
-            uint128 tokensOwed1) = nonfungiblePositionManager.positions(tokenId);
+            uint128 tokensOwed1) = INonfungiblePositionManager(nonfungiblePositionManager).positions(tokenId);
         if (liquidity > 0) {
 
             (,int24 tickCurrent,,,,,) = pool.slot0();
@@ -812,5 +812,33 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         swapFee0 = tokensOwed0;
         swapFee1 = tokensOwed1;
 
+    }
+
+    /// @dev check tokenId range is out of current tick or not
+    function checkRangeStatusByTokenId(uint256 tokenId)
+    external
+    view
+    returns (bool inRange,int24 tickLowerRet, int24 tickUpperRet, int24 currentTick)
+    {
+        (
+            ,
+            ,
+            address token0,
+            address token1,
+            uint24 fee,
+            int24 tickLower,
+            int24 tickUpper,
+            ,
+            ,
+            ,
+            ,
+
+        ) = INonfungiblePositionManager(nonfungiblePositionManager).positions(tokenId);
+        tickLowerRet = tickLower;
+        tickUpperRet = tickUpper;
+
+        address pool = IUniswapV3Factory(factory).getPool(token0, token1, fee);
+        (,currentTick,,,,,) = IUniswapV3Pool(pool).slot0();
+        inRange = (tickLower <= currentTick && currentTick < tickUpper);
     }
 }
