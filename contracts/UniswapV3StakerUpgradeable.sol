@@ -638,7 +638,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         rewardTokens = new address[](len);
         for( uint256 i = 0; i<len; i++){
             bytes32   rewardTokenBytes32 = userRewardTokens[from].at(i);
-            rewardTokens[i] = utils.bytesToAddress(utils.bytes32ToBytes(rewardTokenBytes32));
+            rewardTokens[i] = utils.bytes32ToAddress(rewardTokenBytes32);
         }
     }
 

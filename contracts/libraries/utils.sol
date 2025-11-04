@@ -7,13 +7,7 @@ library utils {
         return bytes32(uint256(uint160(a)));
     }
 
-    function bytesToAddress(bytes memory b) internal pure returns (address addr) {
-        assembly {
-            addr := mload(add(b,20))
-        }
-    }
-
-    function bytes32ToBytes (bytes32 b) internal pure returns (bytes memory addr) {
-        return abi.encodePacked(b);
+    function bytes32ToAddress(bytes32 b) internal pure returns (address addr){
+        addr = address(uint160(uint256(b)));
     }
 }
