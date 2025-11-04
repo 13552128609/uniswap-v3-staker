@@ -841,4 +841,44 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         (,currentTick,,,,,) = IUniswapV3Pool(pool).slot0();
         inRange = (tickLower <= currentTick && currentTick < tickUpper);
     }
+
+    /// @dev filter incentive keys of staked by tokenId
+    function getCanStakeIncentiveKeysByTokenId(uint256 tokenId)
+    external
+    view
+    returns (IncentiveKey[] memory keys)
+    {
+        (
+            ,
+            ,
+            address token0,
+            address token1,
+            uint24 fee,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+
+        ) = INonfungiblePositionManager(nonfungiblePositionManager).positions(tokenId);
+        address pool = IUniswapV3Factory(factory).getPool(token0, token1, fee);
+        uint256 len = incentiveIds.length();
+        IncentiveKey[] memory tempKeys = new IncentiveKey[](len);
+        uint256 tempCount = 0;
+
+        for(uint256 i = 0; i< len; i++){
+            bytes32 incentiveId = incentiveIds.at(i);
+            IncentiveKey memory key = incentiveKeys[incentiveId];
+            if( address(key.rewardToken) == pool && (!tokenIdIncentiveIds[tokenId].contains(incentiveId))){
+                tempKeys[i] = key;
+                tempCount++;
+            }
+        }
+
+        keys = new IncentiveKey[](tempCount);
+        for(uint256 i =0; i< tempCount; i++){
+            keys[i] = tempKeys[i];
+        }
+    }
 }
