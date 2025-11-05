@@ -465,7 +465,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
 
         tokenIdIncentiveIds[tokenId].add(incentiveId);
         bytes32 rewardTokenBytes32 = utils.addressToBytes32(address(key.rewardToken));
-        if (!userRewardTokens[msg.sender].contains(rewardTokenBytes32)){
+        if (!userRewardTokens[deposits[tokenId].owner].contains(rewardTokenBytes32)){
             userRewardTokens[msg.sender].add(rewardTokenBytes32);
         }
 
@@ -870,8 +870,8 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         for(uint256 i = 0; i< len; i++){
             bytes32 incentiveId = incentiveIds.at(i);
             IncentiveKey memory key = incentiveKeys[incentiveId];
-            if( address(key.rewardToken) == pool && (!tokenIdIncentiveIds[tokenId].contains(incentiveId))){
-                tempKeys[i] = key;
+            if( address(key.pool) == pool && (!tokenIdIncentiveIds[tokenId].contains(incentiveId))){
+                tempKeys[tempCount] = key;
                 tempCount++;
             }
         }
