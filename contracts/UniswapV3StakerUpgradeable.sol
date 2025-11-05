@@ -466,7 +466,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         tokenIdIncentiveIds[tokenId].add(incentiveId);
         bytes32 rewardTokenBytes32 = utils.addressToBytes32(address(key.rewardToken));
         if (!userRewardTokens[deposits[tokenId].owner].contains(rewardTokenBytes32)){
-            userRewardTokens[msg.sender].add(rewardTokenBytes32);
+            userRewardTokens[deposits[tokenId].owner].add(rewardTokenBytes32);
         }
 
         (, uint160 secondsPerLiquidityInsideX128, ) = pool.snapshotCumulativesInside(tickLower, tickUpper);
