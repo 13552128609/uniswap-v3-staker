@@ -818,7 +818,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     function checkRangeStatusByTokenId(uint256 tokenId)
     external
     view
-    returns (bool inRange,int24 tickLowerRet, int24 tickUpperRet, int24 currentTick)
+    returns (bool inRange,int24 tickLowerRet, int24 tickUpperRet, int24 currentTick, address pool)
     {
         (
             ,
@@ -837,7 +837,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         tickLowerRet = tickLower;
         tickUpperRet = tickUpper;
 
-        address pool = IUniswapV3Factory(factory).getPool(token0, token1, fee);
+        pool = IUniswapV3Factory(factory).getPool(token0, token1, fee);
         (,currentTick,,,,,) = IUniswapV3Pool(pool).slot0();
         inRange = (tickLower <= currentTick && currentTick < tickUpper);
     }
