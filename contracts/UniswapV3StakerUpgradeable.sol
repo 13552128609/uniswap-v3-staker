@@ -511,13 +511,12 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     view
     returns (uint256[] memory tokenIds)
     {
-        uint256[] memory tokenIdsAll = getTokenIdsByAddress(from);
-        uint256 len = tokenIdsAll.length;
+        uint256 len = userTokenIds[from].length();
         uint256 count = 0;
         uint256[] memory tokenIdsTemp = new uint256[](len);
         for (uint256 i = 0; i < len; i++) {
-            if (isTokenStaked(tokenIdsAll[i])) {
-                tokenIdsTemp[count] = tokenIdsAll[i];
+            if (isTokenStaked(userTokenIds[from].at(i))) {
+                tokenIdsTemp[count] = userTokenIds[from].at(i);
                 count++;
             }
         }
@@ -535,9 +534,9 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
     returns (bool staked)
     {
         staked = false;
-        uint256 len = incentiveIds.length();
+        uint256 len = tokenIdIncentiveIds[tokenId].length();
         for(uint256 i=0 ; i<len; i++){
-            if(_stakes[tokenId][incentiveIds.at(i)].liquidityNoOverflow != 0){
+            if(_stakes[tokenId][tokenIdIncentiveIds[tokenId].at(i)].liquidityNoOverflow != 0){
                 staked = true;
                 break;
             }
@@ -876,4 +875,23 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
             keys[i] = tempKeys[i];
         }
     }
+
+    struct IncentiveInfo {
+        IncentiveKey key;
+        uint256 totalRewardUnclaimed;
+    }
+    /// @dev filter incentive keys of staked by tokenId
+    function getAllIncentiveInfo()
+    external
+    view
+    returns (IncentiveInfo[] memory incentiveInfo)
+    {
+        uint256 len = incentiveIds.length();
+        incentiveInfo = new IncentiveInfo[](len);
+        for( uint256 i = 0; i< len; i++ ){
+            bytes32 incentiveId = incentiveIds.at(i);
+            incentiveInfo[i] = IncentiveInfo({key:incentiveKeys[incentiveId],totalRewardUnclaimed:incentives[incentiveId].totalRewardUnclaimed});
+        }
+    }
+
 }
