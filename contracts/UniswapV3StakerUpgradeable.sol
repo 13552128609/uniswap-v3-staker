@@ -864,7 +864,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         for(uint256 i = 0; i< len; i++){
             bytes32 incentiveId = incentiveIds.at(i);
             IncentiveKey memory key = incentiveKeys[incentiveId];
-            if( address(key.pool) == pool && (!tokenIdIncentiveIds[tokenId].contains(incentiveId))){
+            if (address(key.pool) == pool && (!tokenIdIncentiveIds[tokenId].contains(incentiveId)) && (block.timestamp < key.endTime)) {
                 tempKeys[tempCount] = key;
                 tempCount++;
             }
