@@ -234,7 +234,6 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
             'UniswapV3Staker::onERC721Received: not a univ3 nft'
         );
 
-        require(!userTokenIds[from].contains(tokenId),'tokenId is already in userTokenIds');
         userTokenIds[from].add(tokenId);
 
         (, , , , , int24 tickLower, int24 tickUpper, , , , , ) = nonfungiblePositionManager.positions(tokenId);
@@ -465,9 +464,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
 
         tokenIdIncentiveIds[tokenId].add(incentiveId);
         bytes32 rewardTokenBytes32 = utils.addressToBytes32(address(key.rewardToken));
-        if (!userRewardTokens[deposits[tokenId].owner].contains(rewardTokenBytes32)){
-            userRewardTokens[deposits[tokenId].owner].add(rewardTokenBytes32);
-        }
+        userRewardTokens[deposits[tokenId].owner].add(rewardTokenBytes32);
 
         (, uint160 secondsPerLiquidityInsideX128, ) = pool.snapshotCumulativesInside(tickLower, tickUpper);
 
@@ -607,9 +604,7 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         for( uint256 i = 0; i< rewardTokens.length; i++){
             address rewardToken = address(rewardTokens[i]);
             bytes32 rewardTokenBytes32 = utils.addressToBytes32(rewardToken);
-            if(!userRewardTokens[user].contains(rewardTokenBytes32)){
-                userRewardTokens[user].add(rewardTokenBytes32);
-            }
+            userRewardTokens[user].add(rewardTokenBytes32);
         }
     }
 
