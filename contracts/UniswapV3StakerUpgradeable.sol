@@ -677,6 +677,9 @@ contract UniswapV3StakerUpgradeable is Initializable, IUniswapV3Staker, Multical
         incentive.totalSecondsClaimedX128 += secondsInsideX128;
         incentive.totalRewardUnclaimed -= reward;
         rewards[key.rewardToken][deposit.owner] += reward;
+
+        Stake storage stake = _stakes[tokenId][incentiveId];
+        stake.secondsPerLiquidityInsideInitialX128 = secondsPerLiquidityInsideX128;
     }
 
     /// @dev update all reward owned by from address.

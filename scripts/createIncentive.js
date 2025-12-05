@@ -41,7 +41,7 @@ async function main() {
     const startTime=Math.floor(Date.now()/1000) + 100; // start now + 1000sec
     const endTime= startTime + maxDuration;
     const refundee="0x4C68772310BEd28fcc9C6fbEE8735908f0b09a48";
-    const reward=1000;
+    const reward=40_000_000;
 
     const token = await ethers.getContractAt("IERC20", rewardToken, signer);
     const txApprove = await token.approve(staker.address,reward);
