@@ -80,12 +80,14 @@ const config: HardhatUserConfig = {
       chainId: 888,
       url: "https://gwan-ssl.wandevs.org:56891",
       accounts:accounts,
+      gasPrice: 2_000_000_000,
     },
     wanTestnet: {
       chainId: 999,
       url: "https://gwan-ssl.wandevs.org:46891",
       accounts:accounts,
-   },
+      gasPrice: 2_000_000_000,
+     },
   },
   solidity: {
     compilers: [DEFAULT_COMPILER_SETTINGS],
@@ -97,12 +99,39 @@ const config: HardhatUserConfig = {
   },
 }
 
-if (process.env.ETHERSCAN_API_KEY) {
-  config.etherscan = {
-    // Your API key for Etherscan
-    // Obtain one at https://etherscan.io/
-    apiKey: process.env.ETHERSCAN_API_KEY,
-  }
+;(config as any).etherscan = {
+  enabled: false,
+  // Your API key for Etherscan
+  // Obtain one at https://etherscan.io/
+  apiKey: process.env.ETHERSCAN_API_KEY || 'NO_API_KEY_REQUIRED',
+  // customChains: [
+  //   {
+  //     network: 'wanMainnet',
+  //     chainId: 888,
+  //     urls: {
+  //       apiURL: 'https://wanscan.org/api',
+  //       browserURL: 'https://wanscan.org',
+  //     },
+  //   },
+  //   {
+  //     network: 'wanTestnet',
+  //     chainId: 999,
+  //     urls: {
+  //       apiURL: 'https://testnet.wanscan.org/api',
+  //       browserURL: 'https://testnet.wanscan.org',
+  //     },
+  //   },
+  // ],
+}
+
+;(config as any).sourcify = {
+  // 设置为 true 进行验证
+  enabled: true,
+  // 可选：自定义 Sourcify 服务器
+  // apiUrl: "https://sourcify.dev/server",
+  // browserUrl: "https://repo.sourcify.dev",
+  // runOnCompile: false,  // 不在编译时自动验证
+  // forceProxies: true,   // 强制验证代理合约
 }
 
 export default config
